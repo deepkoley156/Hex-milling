@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VMC Hexagon CNC Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.8);
+            --glass-shadow: 0 8px 32px 0 rgba(138, 142, 196, 0.15);
+            --primary: #8b5cf6; 
+            --primary-hover: #7c3aed;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f3f4f6 0%, #e9d5ff 100%);
+            min-height: 100vh;
+            color: #374151;
+            overscroll-behavior-y: none;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--glass-shadow);
+        }
+
+        .glass-input {
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(229, 231, 235, 0.8);
+            transition: all 0.25s ease;
+        }
+
+        .glass-input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 1);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .glass-btn {
+            background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+            color: white;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+        }
+        
+        .glass-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+        }
+        
+        .glass-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            background: #cbd5e1;
+            box-shadow: none;
+        }
+
+        .code-area {
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(229, 231, 235, 0.9);
+            font-family: 'ui-monospace', 'SFMono-Regular', 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #1f2937;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.3); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(139, 92, 246, 0.5); }
+
+        /* Loader Animation */
+        .spinner {
+            border: 3px solid rgba(139, 92, 246, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid var(--primary);
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Modal Animation */
+        #simModal {
+            transition: opacity 0.3s ease;
+            opacity: 0;
+            pointer-events: none;
+        }
+        #simModal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        .modal-content {
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transform: scale(0.95) translateY(10px);
+        }
+        #simModal.active .modal-content {
+            transform: scale(1) translateY(0);
+        }
+
+        /* Fade in transition for results */
+        .fade-in {
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+        .fade-in.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="glass-panel w-full max-w-4xl rounded-3xl p-5 md:p-8 flex flex-col gap-6 w-full relative overflow-hidden">
+        
+        <div class="text-center">
+            <h1 class="text-2xl md:text-3xl font-bold tracking-tight text-gray-800">VMC Hexagon Generator</h1>
+            <p class="text-sm md:text-base text-gray-500 mt-1 font-medium">Smart G-Code & Animated Toolpath</p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-gray-600 ml-1 uppercase tracking-wider">Center X <span class="text-gray-400 font-normal">(Opt)</span></label>
+                <input type="number" id="cx" step="0.1" placeholder="e.g., 0" class="glass-input w-full px-4 py-2.5 rounded-xl text-gray-800 font-semibold text-sm">
+            </div>
+            
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-gray-600 ml-1 uppercase tracking-wider">Center Y <span class="text-gray-400 font-normal">(Opt)</span></label>
+                <input type="number" id="cy" step="0.1" placeholder="e.g., 0" class="glass-input w-full px-4 py-2.5 rounded-xl text-gray-800 font-semibold text-sm">
+            </div>
+            
+            <div class="flex flex-col gap-1.5 col-span-2 md:col-span-1">
+                <label class="text-xs font-semibold text-gray-600 ml-1 uppercase tracking-wider text-purple-700">Flat to Flat (AF)*</label>
+                <input type="number" id="af" step="0.1" min="1" placeholder="e.g., 50" class="glass-input w-full px-4 py-2.5 rounded-xl text-gray-800 font-semibold text-sm border-purple-200">
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-gray-600 ml-1 uppercase tracking-wider text-purple-700">Z Depth*</label>
+                <input type="number" id="zDepth" step="0.5" placeholder="e.g., -10" class="glass-input w-full px-4 py-2.5 rounded-xl text-gray-800 font-semibold text-sm border-purple-200">
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-gray-600 ml-1 uppercase tracking-wider text-purple-700">Tool Dia*</label>
+                <input type="number" id="toolDia" step="0.5" min="1" placeholder="e.g., 10" class="glass-input w-full px-4 py-2.5 rounded-xl text-gray-800 font-semibold text-sm border-purple-200">
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-gray-600 ml-1 uppercase tracking-wider">Corner R <span class="text-gray-400 font-normal">(Opt)</span></label>
+                <input type="number" id="cornerR" step="0.5" min="0" placeholder="e.g., 2" class="glass-input w-full px-4 py-2.5 rounded-xl text-gray-800 font-semibold text-sm">
+            </div>
+
+            <div class="flex flex-col gap-1.5 col-span-2 md:col-span-3">
+                <label class="text-xs font-semibold text-gray-600 ml-1 uppercase tracking-wider text-purple-700">Feed Rate*</label>
+                <input type="number" id="feed" step="10" min="10" placeholder="e.g., 500" class="glass-input w-full px-4 py-2.5 rounded-xl text-gray-800 font-semibold text-sm border-purple-200">
+            </div>
+        </div>
+
+        <!-- Validation Error Message -->
+        <div id="errorMsg" class="hidden bg-red-50 text-red-600 text-sm font-semibold px-4 py-3 rounded-xl border border-red-200 text-center">
+            Please fill in all required fields (*) marked in purple.
+        </div>
+
+        <!-- Generate Button -->
+        <button id="generateBtn" onclick="handleGenerate()" class="glass-btn w-full md:w-64 self-center px-6 py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 mt-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+            Generate G-Code
+        </button>
+
+        <div id="loaderArea" class="hidden flex-col items-center justify-center py-8 gap-4">
+            <div class="spinner"></div>
+            <p class="text-purple-600 font-semibold animate-pulse">Generating Toolpath & Calculating Arcs...</p>
+        </div>
+
+        <div id="resultsArea" class="hidden flex-col gap-6 fade-in mt-4">
+            
+            <button onclick="openSimulation()" class="bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 w-full self-center px-6 py-3.5 rounded-2xl font-semibold text-sm md:text-base flex items-center justify-center gap-2 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                View 2D Toolpath Simulation
+            </button>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div class="flex flex-col relative rounded-2xl overflow-hidden shadow-sm">
+                    <div class="flex justify-between items-center bg-white/60 px-4 py-2.5 border-b border-gray-200">
+                        <h3 class="font-bold text-sm text-gray-700">Main Program (O1000)</h3>
+                        <button onclick="copyCode('mainProg', this)" class="text-xs bg-white hover:bg-gray-50 text-purple-700 font-semibold py-1.5 px-3 rounded-lg shadow-sm border border-gray-200 transition-all active:scale-95">Copy</button>
+                    </div>
+                    <textarea id="mainProg" readonly class="code-area w-full h-64 p-4 resize-none focus:outline-none" spellcheck="false"></textarea>
+                </div>
+
+                <div class="flex flex-col relative rounded-2xl overflow-hidden shadow-sm">
+                    <div class="flex justify-between items-center bg-white/60 px-4 py-2.5 border-b border-gray-200">
+                        <h3 class="font-bold text-sm text-gray-700">Sub Program (O2000)</h3>
+                        <button onclick="copyCode('subProg', this)" class="text-xs bg-white hover:bg-gray-50 text-purple-700 font-semibold py-1.5 px-3 rounded-lg shadow-sm border border-gray-200 transition-all active:scale-95">Copy</button>
+                    </div>
+                    <textarea id="subProg" readonly class="code-area w-full h-64 p-4 resize-none focus:outline-none" spellcheck="false"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="simModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+        <div class="modal-content glass-panel w-full max-w-4xl bg-white/95 rounded-3xl overflow-hidden shadow-2xl border-white flex flex-col h-[80vh] md:h-[70vh]">
+            <div class="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white/80">
+                <h3 class="font-bold text-lg text-gray-800 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    Live Toolpath Simulation
+                </h3>
+                <div class="flex gap-3">
+                    <button onclick="startAnimation()" class="bg-white border border-purple-200 text-purple-600 hover:bg-purple-50 px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1 shadow-sm transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Replay
+                    </button>
+                    <button onclick="closeSimulation()" class="p-1.5 rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 bg-gray-50/50 relative p-4">
+                <!-- Canvas container -->
+                <div class="w-full h-full rounded-2xl bg-white shadow-inner border border-gray-200 overflow-hidden relative" id="canvasContainer">
+                    <canvas id="simCanvas" class="block w-full h-full"></canvas>
+                    <div class="absolute bottom-3 left-3 bg-white/90 backdrop-blur px-3 py-2 rounded-xl text-xs font-mono text-gray-600 border border-gray-200 shadow-sm">
+                        <div class="flex items-center gap-2 mb-1.5"><div class="w-3 h-0.5 bg-red-400"></div> X-Axis</div>
+                        <div class="flex items-center gap-2 mb-1.5"><div class="w-3 h-0.5 bg-green-400"></div> Y-Axis</div>
+                        <div class="flex items-center gap-2 mb-1.5"><div class="w-3 h-3 bg-purple-100 border border-purple-300 rounded-sm"></div> Target Shape</div>
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full border border-purple-500 bg-purple-100"></div> Toolpath</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const f = (val) => parseFloat(val).toFixed(3);
+        let hexData = {};
+
+        // Validation & Loading Logic
+        function handleGenerate() {
+            // Get raw input values
+            const afRaw = document.getElementById('af').value;
+            const zRaw = document.getElementById('zDepth').value;
+            const toolRaw = document.getElementById('toolDia').value;
+            const feedRaw = document.getElementById('feed').value;
+            
+            const errorMsg = document.getElementById('errorMsg');
+            const resultsArea = document.getElementById('resultsArea');
+            const loaderArea = document.getElementById('loaderArea');
+            const generateBtn = document.getElementById('generateBtn');
+
+            // Basic Validation
+            if (!afRaw || !zRaw || !toolRaw || !feedRaw) {
+                errorMsg.classList.remove('hidden');
+                return;
+            }
+            errorMsg.classList.add('hidden');
+
+            // Hide results if already showing, disable button, show loader
+            resultsArea.classList.remove('show');
+            setTimeout(() => resultsArea.classList.add('hidden'), 300); // Wait for fade out
+            
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = "Processing...";
+            
+            setTimeout(() => {
+                loaderArea.classList.remove('hidden');
+                loaderArea.style.display = 'flex';
+            }, 300);
+
+            // 5 SECOND WAIT before generation
+            setTimeout(() => {
+                // Hide loader
+                loaderArea.classList.add('hidden');
+                loaderArea.style.display = 'none';
+                
+                // Reset Button
+                generateBtn.disabled = false;
+                generateBtn.innerHTML = `
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                    Regenerate G-Code
+                `;
+
+                // Calculate Math and Data
+                processMathData();
+
+                // Show Results with fade in
+                resultsArea.classList.remove('hidden');
+                resultsArea.style.display = 'flex';
+                // Trigger reflow
+                void resultsArea.offsetWidth;
+                resultsArea.classList.add('show');
+                
+                // Scroll slightly to show results better on mobile
+                resultsArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            }, 5000);
+        }
+
+        function generateHexPath(cx, cy, af, cornerR) {
+            // Max allowed corner radius so arcs don't overlap
+            let r = Math.max(0, Math.min(cornerR, af / 2 - 0.001));
+            let t = r * Math.tan(Math.PI / 6); // Tangent offset distance
+            let R_hex = af / Math.sqrt(3);
+            
+            // Corners sorted clockwise starting from Top-Left
+            let angles = [120, 60, 0, 300, 240, 180].map(a => a * Math.PI / 180);
+            let corners = angles.map(a => ({ x: cx + R_hex * Math.cos(a), y: cy + R_hex * Math.sin(a) }));
+            let arcs = [];
+
+            for (let i = 0; i < 6; i++) {
+                let p1 = corners[i];
+                let p0 = corners[(i - 1 + 6) % 6];
+                let p2 = corners[(i + 1) % 6];
+
+                let nxIn = (p1.x - p0.x) / Math.hypot(p1.x - p0.x, p1.y - p0.y);
+                let nyIn = (p1.y - p0.y) / Math.hypot(p1.x - p0.x, p1.y - p0.y);
+                let nxOut = (p2.x - p1.x) / Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                let nyOut = (p2.y - p1.y) / Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+                let arcStart = { x: p1.x - nxIn * t, y: p1.y - nyIn * t };
+                let arcEnd = { x: p1.x + nxOut * t, y: p1.y + nyOut * t };
+
+                // Arc center is 90 deg right (CW) of inward vector
+                let cxArc = arcStart.x + nyIn * r;
+                let cyArc = arcStart.y - nxIn * r;
+
+                let startAngle = Math.atan2(arcStart.y - cyArc, arcStart.x - cxArc);
+                let endAngle = startAngle - (Math.PI / 3); // CW arc turning exactly 60 deg
+
+                arcs[i] = { type: 'arc', start: arcStart, end: arcEnd, center: { x: cxArc, y: cyArc }, r, startAngle, endAngle };
+            }
+
+            let path = [];
+            let curr = { x: cx, y: cy + af/2 }; // Start at middle of Top Flat
+            const order = [1, 2, 3, 4, 5, 0]; // Sequence CW: Top-Right -> Right -> Bottom-Right -> ...
+
+            for (let idx of order) {
+                let arc = arcs[idx];
+                path.push({ type: 'line', start: curr, end: arc.start });
+                if (r > 0) path.push(arc);
+                curr = arc.end;
+            }
+            path.push({ type: 'line', start: curr, end: { x: cx, y: cy + af/2 } }); // Close shape
+
+            return path;
+        }
+
+        // Convert path to polyline for smooth canvas animation
+        function getToolPolyline(path) {
+            let pts = [path[0].start];
+            for (let seg of path) {
+                if (seg.type === 'line') {
+                    pts.push(seg.end);
+                } else if (seg.type === 'arc') {
+                    let sweep = Math.PI / 3; // 60 degrees
+                    let steps = 15;
+                    for (let i = 1; i <= steps; i++) {
+                        let a = seg.startAngle - (sweep * i / steps);
+                        pts.push({
+                            x: seg.center.x + seg.r * Math.cos(a),
+                            y: seg.center.y + seg.r * Math.sin(a)
+                        });
+                    }
+                }
+            }
+            return pts;
+        }
+
+        function processMathData() {
+            // Parse all values, default to 0 if empty or invalid
+            const cx = parseFloat(document.getElementById('cx').value) || 0;
+            const cy = parseFloat(document.getElementById('cy').value) || 0;
+            const af = parseFloat(document.getElementById('af').value) || 0;
+            const cornerR = parseFloat(document.getElementById('cornerR').value) || 0;
+            const zDepth = parseFloat(document.getElementById('zDepth').value) || 0;
+            const toolDia = parseFloat(document.getElementById('toolDia').value) || 0;
+            const feed = parseFloat(document.getElementById('feed').value) || 0;
+            const rpm = Math.floor(feed * 5) || 2500; 
+
+            const r = Math.max(0, Math.min(cornerR, af / 2 - 0.001));
+            const approachGap = (toolDia / 2) + 5; 
+
+            // Target Hex Profile
+            const targetPath = generateHexPath(cx, cy, af, r);
+            const targetPoly = getToolPolyline(targetPath);
+
+            // Tool Center Path (Offsets exact geometry outward by tool radius)
+            const toolPath = generateHexPath(cx, cy, af + toolDia, r + toolDia / 2);
+            const toolPoly = getToolPolyline(toolPath);
+
+            // Safe Lead-in and Lead-out approaches
+            const pStart = { x: cx, y: cy + af/2 + approachGap + 10 };
+            const pApproach = { x: cx, y: cy + af/2 + approachGap };
+
+            const fullToolPathRaw = [pStart, pApproach, ...toolPoly, pApproach, pStart];
+
+            hexData = { 
+                cx, cy, af, cornerR: r, zDepth, toolDia, 
+                targetPoly, fullToolPathRaw, approachGap
+            };
+
+            generateGcode(cx, cy, af, r, zDepth, toolDia, feed, rpm, approachGap, targetPath);
+        }
+
+        function generateGcode(cx, cy, af, r, zDepth, toolDia, feed, rpm, approachGap, targetPath) {
+            const mainCode = 
+`O1000 (HEXAGON MAIN)
+(AF=${af} X=${cx} Y=${cy} R=${f(r)} T-DIA=${toolDia})
+G21 G90 G40 G80
+T01 M06 (D=${toolDia}MM ENDMILL)
+G54 G00 X${f(cx)} Y${f(cy)} S${rpm} M03
+G43 H01 Z50.0 M08
+(APPROACH POS)
+G00 X${f(cx)} Y${f(cy + af/2 + approachGap + 10)}
+Z2.0
+G01 Z${f(zDepth)} F${f(feed/2)}
+(CALL SUBPROGRAM)
+M98 P2000
+G00 Z50.0 M09
+M30`;
+
+            let subCode = 
+`O2000 (HEXAGON SUB PROFILE)
+(COMP ON - CLIMB MILLING CW)
+G41 D01 X${f(cx)} Y${f(cy + af/2)} F${feed}\n`;
+
+            for (let seg of targetPath) {
+                if (seg.type === 'line') {
+                    if (Math.hypot(seg.end.x - seg.start.x, seg.end.y - seg.start.y) > 0.001) {
+                        subCode += `G01 X${f(seg.end.x)} Y${f(seg.end.y)}\n`;
+                    }
+                } else if (seg.type === 'arc') {
+                    subCode += `G02 X${f(seg.end.x)} Y${f(seg.end.y)} R${f(seg.r)}\n`;
+                }
+            }
+
+            subCode += `(COMPENSATION OFF)\n`;
+            subCode += `G40 G01 X${f(cx)} Y${f(cy + af/2 + approachGap + 10)}\n`;
+            subCode += `M99`;
+
+            document.getElementById('mainProg').value = mainCode;
+            document.getElementById('subProg').value = subCode;
+        }
+
+        function copyCode(id, btnElement) {
+            const el = document.getElementById(id);
+            el.select();
+            document.execCommand('copy');
+            window.getSelection().removeAllRanges();
+            
+            const originalText = btnElement.innerText;
+            btnElement.innerText = "Copied!";
+            btnElement.classList.add("bg-green-50", "text-green-600", "border-green-200");
+            setTimeout(() => {
+                btnElement.innerText = originalText;
+                btnElement.classList.remove("bg-green-50", "text-green-600", "border-green-200");
+            }, 1500);
+        }
+
+        const modal = document.getElementById('simModal');
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let animReq = null;
+        let isAnimating = false;
+        let toolPos = { x: 0, y: 0 };
+        let targetNodeIdx = 1;
+        let mappedPath = []; 
+        let scale = 1, offsetX = 0, offsetY = 0;
+
+        function openSimulation() {
+            modal.classList.add('active');
+            window.addEventListener('resize', handleResize);
+            setTimeout(() => {
+                handleResize();
+                startAnimation();
+            }, 50);
+        }
+
+        function closeSimulation() {
+            modal.classList.remove('active');
+            window.removeEventListener('resize', handleResize);
+            if (animReq) cancelAnimationFrame(animReq);
+            isAnimating = false;
+        }
+
+        function handleResize() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            setupViewport();
+            if (!isAnimating) {
+                drawBackground();
+                if(mappedPath.length > 0) drawTool(mappedPath[mappedPath.length-1].x, mappedPath[mappedPath.length-1].y);
+            }
+        }
+
+        function setupViewport() {
+            if(!hexData.fullToolPathRaw) return;
+
+            let minX = 0, maxX = 0, minY = 0, maxY = 0;
+            hexData.fullToolPathRaw.forEach(p => {
+                minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+                minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+            });
+            minX = Math.min(minX, 0); maxX = Math.max(maxX, 0);
+            minY = Math.min(minY, 0); maxY = Math.max(maxY, 0);
+
+            const rangeX = maxX - minX || 100; const rangeY = maxY - minY || 100;
+            minX -= rangeX * 0.2; maxX += rangeX * 0.2;
+            minY -= rangeY * 0.2; maxY += rangeY * 0.2;
+
+            scale = Math.min(canvas.width / (maxX - minX), canvas.height / (maxY - minY));
+            offsetX = (canvas.width - (maxX - minX) * scale) / 2;
+            offsetY = (canvas.height - (maxY - minY) * scale) / 2;
+
+            const mapX = (x) => offsetX + (x - minX) * scale;
+            const mapY = (y) => canvas.height - (offsetY + (y - minY) * scale); // Invert Y
+
+            mappedPath = hexData.fullToolPathRaw.map(p => ({ x: mapX(p.x), y: mapY(p.y) }));
+            hexData.mappedTargetPoly = hexData.targetPoly.map(p => ({ x: mapX(p.x), y: mapY(p.y) }));
+            
+            hexData.mappedOrigin = { x: mapX(0), y: mapY(0) };
+            hexData.mappedCenter = { x: mapX(hexData.cx), y: mapY(hexData.cy) };
+            hexData.pixelToolRadius = (hexData.toolDia / 2) * scale;
+        }
+
+        function startAnimation() {
+            if (animReq) cancelAnimationFrame(animReq);
+            if (!mappedPath || mappedPath.length === 0) return;
+            
+            toolPos = { x: mappedPath[0].x, y: mappedPath[0].y };
+            targetNodeIdx = 1;
+            isAnimating = true;
+            
+            animateLoop();
+        }
+
+        function animateLoop() {
+            if (!isAnimating) return;
+
+            const speed = 4.0; // Px per frame
+            let target = mappedPath[targetNodeIdx];
+            let dx = target.x - toolPos.x;
+            let dy = target.y - toolPos.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+
+            if (dist <= speed) {
+                toolPos.x = target.x;
+                toolPos.y = target.y;
+                targetNodeIdx++;
+                
+                if (targetNodeIdx >= mappedPath.length) {
+                    isAnimating = false;
+                    drawBackground();
+                    drawToolPathUpToCurrent(toolPos);
+                    drawTool(toolPos.x, toolPos.y);
+                    return;
+                }
+            } else {
+                toolPos.x += (dx / dist) * speed;
+                toolPos.y += (dy / dist) * speed;
+            }
+
+            drawBackground();
+            drawToolPathUpToCurrent(toolPos);
+            drawTool(toolPos.x, toolPos.y);
+
+            animReq = requestAnimationFrame(animateLoop);
+        }
+
+        function drawBackground() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(248, 113, 113, 0.5)';
+            ctx.beginPath(); ctx.moveTo(0, hexData.mappedOrigin.y); ctx.lineTo(canvas.width, hexData.mappedOrigin.y); ctx.stroke();
+
+            ctx.strokeStyle = 'rgba(74, 222, 128, 0.5)';
+            ctx.beginPath(); ctx.moveTo(hexData.mappedOrigin.x, 0); ctx.lineTo(hexData.mappedOrigin.x, canvas.height); ctx.stroke();
+
+            // Draw Full Target Polyline
+            ctx.beginPath();
+            const tp = hexData.mappedTargetPoly;
+            ctx.moveTo(tp[0].x, tp[0].y);
+            for(let i=1; i<tp.length; i++) ctx.lineTo(tp[i].x, tp[i].y);
+            ctx.closePath();
+            
+            ctx.fillStyle = 'rgba(139, 92, 246, 0.12)';
+            ctx.fill();
+            ctx.strokeStyle = '#8b5cf6';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.fillStyle = '#4b5563';
+            ctx.beginPath(); ctx.arc(hexData.mappedCenter.x, hexData.mappedCenter.y, 3, 0, Math.PI * 2); ctx.fill();
+            ctx.font = '11px Inter';
+            ctx.fillText(`Center(X${hexData.cx},Y${hexData.cy})`, hexData.mappedCenter.x + 6, hexData.mappedCenter.y - 6);
+        }
+
+        function drawToolPathUpToCurrent(currentPos) {
+            if (targetNodeIdx === 0) return;
+            
+            ctx.beginPath();
+            ctx.moveTo(mappedPath[0].x, mappedPath[0].y);
+            for (let i = 1; i < targetNodeIdx; i++) ctx.lineTo(mappedPath[i].x, mappedPath[i].y);
+            ctx.lineTo(currentPos.x, currentPos.y);
+
+            ctx.strokeStyle = 'rgba(167, 139, 250, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        }
+
+        function drawTool(x, y) {
+            ctx.beginPath();
+            ctx.arc(x, y, hexData.pixelToolRadius, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(139, 92, 246, 0.25)';
+            ctx.fill();
+            
+            ctx.strokeStyle = '#7c3aed';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = '#5b21b6';
+            ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI*2); ctx.fill();
+        }
+    </script>
+</body>
+</html>
