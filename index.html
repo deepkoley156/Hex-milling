@@ -396,3 +396,8 @@ function copyCode(which, btn) {
   if (!S) return;
   navigator.clipboard.writeText(S.lines[which].join('\n')).then(() => {
     const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = o, 1500);
+    }).catch(() => alert('Copy failed'));
+}
+</script>
+</body>
+</html>
