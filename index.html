@@ -184,36 +184,49 @@ function processMathData() {
   const tg = generateHexPath(cx, cy, af, r);
   const tp = generateHexPath(cx, cy, af + toolDia, r + toolDia / 2);
 
+  const zd = -Math.abs(zDepth);   // depth is always below the top surface
   const main = [
     'O1000 (HEXAGON MAIN)', `(AF=${af} X=${cx} Y=${cy} R=${f(r)} T-DIA=${toolDia})`, 'G21 G90 G40 G80',
     `T01 M06 (D=${toolDia}MM ENDMILL)`, `G54 G00 X${f(cx)} Y${f(cy)} S${rpm} M03`, 'G43 H01 Z50.0 M08',
-    '(APPROACH POS)', `G00 X${f(cx)} Y${f(cy + af / 2 + gap + 10)}`, 'Z2.0', `G01 Z${f(zDepth)} F${f(feed / 2)}`,
+    '(APPROACH POS)', `G00 X${f(cx)} Y${f(cy + af / 2 + gap + 10)}`, 'Z2.0', `G01 Z${f(zd)} F${f(feed / 2)}`,
     '(CALL SUBPROGRAM)', 'M98 P2000', 'G00 Z50.0 M09', 'M30'
   ];
   const sub = ['O2000 (HEXAGON SUB PROFILE)', '(COMP ON - CLIMB MILLING CW)', `G41 D01 X${f(cx)} Y${f(cy + af / 2)} F${feed}`];
 
-  const zd = -Math.abs(zDepth);
   const M = []; let cur = { x: 0, y: 0, z: 100 };
-  const mv = (prog, line, type, to, arc, comp) => {
+  const mv = (prog, line, type, to, arc, comp, corner) => {
     const from = { ...cur }, t = { ...cur, ...to };
     const len = type === 'A' ? arc.r * Math.PI / 3 : Math.hypot(t.x - from.x, t.y - from.y, t.z - from.z);
     const fd = type === 'R' ? RAPID : (prog === 'main' && line === 9 ? feed / 2 : feed);
-    M.push({ type, prog, line, from, to: t, len, arc, comp: !!comp, feed: fd }); cur = t;
+    M.push({ type, prog, line, from, to: t, len, arc, comp: !!comp, corner: !!corner, feed: fd }); cur = t;
   };
   mv('main', 4, 'R', { x: cx, y: cy }); mv('main', 5, 'R', { z: 50 });
   mv('main', 7, 'R', P0); mv('main', 8, 'R', { z: 2 }); mv('main', 9, 'F', { z: zd });
   mv('sub', 2, 'F', { x: tp[0].start.x, y: tp[0].start.y }, null, true);
-  tg.forEach((s, i) => {
-    const t = tp[i];
+
+  // G-code lines of the programmed (target) hexagon
+  const gl = [];   // sub-program line index for each target segment (-1 = skipped, zero length)
+  tg.forEach(s => {
     if (s.type === 'line') {
-      if (Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) > 0.001) {
-        sub.push(`G01 X${f(s.end.x)} Y${f(s.end.y)}`);
-        mv('sub', sub.length - 1, 'F', { x: t.end.x, y: t.end.y }, null, true);
-      }
-    } else {
-      sub.push(`G02 X${f(s.end.x)} Y${f(s.end.y)} R${f(s.r)}`);
-      mv('sub', sub.length - 1, 'A', { x: t.end.x, y: t.end.y }, { cx: t.center.x, cy: t.center.y, r: t.r, a0: t.startAngle }, true);
-    }
+      if (Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) > 0.001) { sub.push(`G01 X${f(s.end.x)} Y${f(s.end.y)}`); gl.push(sub.length - 1); }
+      else gl.push(-1);
+    } else { sub.push(`G02 X${f(s.end.x)} Y${f(s.end.y)} R${f(s.r)}`); gl.push(sub.length - 1); }
+  });
+
+  // Executed tool-centre path (offset by tool radius). With corner R = 0 the tool path still has
+  // compensation arcs at every corner, so the two paths do NOT have the same number of segments.
+  let li = 0, lastLn = 2;
+  tp.forEach((t, i) => {
+    let ln;
+    if (r > 0) ln = gl[i];
+    else ln = gl[Math.min(li, gl.length - 1)];
+    if (ln === undefined || ln < 0) ln = lastLn;
+    const isLine = t.type === 'line';
+    if (isLine && r === 0) li++;
+    if (isLine && Math.hypot(t.end.x - t.start.x, t.end.y - t.start.y) < 0.001) return;
+    lastLn = ln;
+    if (isLine) mv('sub', ln, 'F', { x: t.end.x, y: t.end.y }, null, true);
+    else mv('sub', ln, 'A', { x: t.end.x, y: t.end.y }, { cx: t.center.x, cy: t.center.y, r: t.r, a0: t.startAngle }, true, r === 0);
   });
   sub.push('(COMPENSATION OFF)');
   sub.push(`G40 G01 X${f(cx)} Y${f(cy + af / 2 + gap + 10)}`);
@@ -337,7 +350,7 @@ function render() {
 
   /* readouts */
   $('dX').textContent = q.x.toFixed(3); $('dY').textContent = q.y.toFixed(3); $('dZ').textContent = q.z.toFixed(3);
-  $('dMode').textContent = done ? 'DONE' : m.type === 'R' ? 'RAPID' : m.type === 'A' ? 'G02 ARC' : (m.line === 9 && m.prog === 'main' ? 'PLUNGE' : 'G01');
+  $('dMode').textContent = done ? 'DONE' : m.type === 'R' ? 'RAPID' : m.type === 'A' ? (m.corner ? 'G41 CORNER' : 'G02 ARC') : (m.line === 9 && m.prog === 'main' ? 'PLUNGE' : 'G01');
   $('dComp').textContent = !done && m.comp ? 'G41' : 'G40';
   $('dF').textContent = done || m.type === 'R' ? 'G00' : Math.round(m.feed);
   $('dProg').textContent = m.prog === 'sub' ? 'O2000' : 'O1000';
@@ -353,38 +366,3 @@ function render() {
     const box = $(m.prog === 'sub' ? 'subBox' : 'mainBox'), el = box.children[m.line];
     el.classList.add('on'); S.lastEl = el; S.lastKey = key;
     $('curBlock').textContent = S.lines[m.prog][m.line];
-    if ($('tab-code').style.display !== 'none') box.scrollTop = el.offsetTop - box.clientHeight / 2;
-  }
-}
-
-const fmt = s => { s = Math.round(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
-
-/* ---------- controls ---------- */
-function resetTo(t) { newStock(); S.ptr = 0; S.frac = 0; S.simT = 0; advance(t); S.simT = t; }
-function restartSim() { if (!S) return; resetTo(0); S.playing = true; $('btnPlay').textContent = 'Pause'; }
-function endSim() { if (!S) return; resetTo(S.total); S.playing = false; $('btnPlay').textContent = 'Replay'; }
-function seekTo(v) { if (!S) return; S.dragT = performance.now(); resetTo(v / 1000 * S.total); }
-function togglePlay() {
-  if (!S) return;
-  if (S.simT >= S.total) { restartSim(); return; }
-  S.playing = !S.playing; $('btnPlay').textContent = S.playing ? 'Pause' : 'Play';
-}
-function setSpeed(btn) {
-  document.querySelectorAll('#speeds button').forEach(b => b.classList.remove('on'));
-  btn.classList.add('on'); if (S) S.speed = +btn.dataset.s;
-}
-function switchTab(n) {
-  ['sim', 'code'].forEach(k => {
-    $('tab-' + k).style.display = k === n ? 'block' : 'none';
-    $('tb-' + k).classList.toggle('active', k === n);
-  });
-}
-function copyCode(which, btn) {
-  if (!S) return;
-  navigator.clipboard.writeText(S.lines[which].join('\n')).then(() => {
-    const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = o, 1500);
-  }).catch(() => alert('Copy failed'));
-  }
-  </script>
-</body>
-</html>
