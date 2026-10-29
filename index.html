@@ -379,3 +379,20 @@ function endSim() { if (!S) return; resetTo(S.total); S.playing = false; $('btnP
 function seekTo(v) { if (!S) return; S.dragT = performance.now(); resetTo(v / 1000 * S.total); }
 function togglePlay() {
   if (!S) return;
+if (S.simT >= S.total) { restartSim(); return; }
+  S.playing = !S.playing; $('btnPlay').textContent = S.playing ? 'Pause' : 'Play';
+}
+function setSpeed(btn) {
+  document.querySelectorAll('#speeds button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on'); if (S) S.speed = +btn.dataset.s;
+}
+function switchTab(n) {
+  ['sim', 'code'].forEach(k => {
+    $('tab-' + k).style.display = k === n ? 'block' : 'none';
+    $('tb-' + k).classList.toggle('active', k === n);
+  });
+}
+function copyCode(which, btn) {
+  if (!S) return;
+  navigator.clipboard.writeText(S.lines[which].join('\n')).then(() => {
+    const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = o, 1500);
