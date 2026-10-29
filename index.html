@@ -366,3 +366,16 @@ function render() {
     const box = $(m.prog === 'sub' ? 'subBox' : 'mainBox'), el = box.children[m.line];
     el.classList.add('on'); S.lastEl = el; S.lastKey = key;
     $('curBlock').textContent = S.lines[m.prog][m.line];
+if ($('tab-code').style.display !== 'none') box.scrollTop = el.offsetTop - box.clientHeight / 2;
+  }
+}
+ 
+const fmt = s => { s = Math.round(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+ 
+/* ---------- controls ---------- */
+function resetTo(t) { newStock(); S.ptr = 0; S.frac = 0; S.simT = 0; advance(t); S.simT = t; }
+function restartSim() { if (!S) return; resetTo(0); S.playing = true; $('btnPlay').textContent = 'Pause'; }
+function endSim() { if (!S) return; resetTo(S.total); S.playing = false; $('btnPlay').textContent = 'Replay'; }
+function seekTo(v) { if (!S) return; S.dragT = performance.now(); resetTo(v / 1000 * S.total); }
+function togglePlay() {
+  if (!S) return;
